@@ -1,0 +1,14 @@
+{
+    "name": "boki/whoischecker",
+    "description": "Domain whois checker",
+    "authors": [
+        {
+            "name": "Bojan Bajic",
+            "email": "boki.deckonja@gmail.com"
+        }
+    ],
+    "require": {},
+    "autoload": {
+		"psr-0": {"WhoisChecker": "src/"}
+	}
+}
