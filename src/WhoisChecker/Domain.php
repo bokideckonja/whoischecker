@@ -5,37 +5,48 @@ namespace WhoisChecker;
 use Exception;
 
 class Domain{
+	// Default TLD, used if not provided
+	private $defaultTLD = "com";
 
-	private $validTlds;
-	private $domain;
-	private $tld;
+	// List of valid TLDs
+	private $validTLDs;
+
+	// Provided domain
+	public $domain;
+
+	// Provided TLD
+	private $TLD;
 
 	public function __construct($domain){
 		// Get valid tlds from extracted file
-		$this->validTlds = require __DIR__.'/tlds.php';
+		$this->validTLDs = require __DIR__.'/TLDs.php';
 
 		// Clean and set provided domain
 		$this->domain = $this->cleanDomain($domain);
 
 		// Set tld based on domain name
-		$this->tld = $this->extractTld();
+		$this->TLD = $this->extractTld();
 	}
 
-	public function whois($domain){
+	// Get whois data for provided domain
+	public function whois(){
+		// Check if domain is valid
 		$this->validateDomain();
-		$this->validateTld();
 
 		return $this->queryWhoisServer();
 	}
 
 	// Query the domain against correct whois server.
-	protected function queryWhoisServer($domain){
-		$whoisServer = $this->validTlds[$this->tld];
+	protected function queryWhoisServer(){
+		// Get whois server based on TLD
+		$whoisServer = $this->validTLDs[$this->TLD];
+
+		// If the server is not in provided list, throw error
 		if(!$whoisServer){
 			throw new Exception('There is no whois server for that TLD.');
 		}
 
-		// die(var_dump($tld));
+		// Curl connect to whois server
 		$ch = curl_init();
 		curl_setopt($ch, CURLOPT_URL, $whoisServer.":43"); // Whois Server
 		curl_setopt($ch, CURLOPT_FOLLOWLOCATION, 0);
@@ -45,34 +56,26 @@ class Domain{
 		curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 0);
         curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, 0);
 		$result = curl_exec ($ch);
+
+		// If curl encounters error, throw it
 		if( curl_error($ch) ){
 			throw new Exception('Error checking domain.');
 		}
 		curl_close($ch);
-		return $result;
 
-		// curl session to get whois reposnse
-        // $ch = curl_init();
-        // curl_setopt($ch, CURLOPT_URL, $url);
-        // curl_setopt($ch, CURLOPT_FOLLOWLOCATION, 0);
-        // curl_setopt($ch, CURLOPT_TIMEOUT, 60);
-        // curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
-        // curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 0);
-        // curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, 0);
-        // $data = curl_exec($ch);
-        // if (curl_error($ch)) {
-        //     return "Connection error!";
-        // } else {
-        //     $string = strip_tags($data);
-        // }
-        // curl_close($ch);
+		return $result;
 	}
 
 	// Check if domain is available
 	public function isAvailable(){
+		// Check if domain is valid
+		$this->validateDomain();
+
+		// Check if DNS records exist
 		if( checkdnsrr($this->domain.'.', 'ANY')){
 			return false;
 		}
+
 		return true;
 	}
 
@@ -121,21 +124,25 @@ class Domain{
 			throw new Exception('Entered domain is not valid.');
 		}
 
+		// Check if there is a whois server for given TLD
+		if( !isset($this->validTLDs[$this->TLD]) ){
+			throw new Exception('Unsupported TLD.');
+		}
+
 		return;
 	}
 
-	// Extract tld from domain name, if there isn't any, use .com
+	// Extract TLD from domain name, if there isn't any, use default
 	protected function extractTld(){
 		$fragments = explode( ".", $this->domain );
 		if(count($fragments) >= 2){
+			// Return last fragment as TLD
 			return array_pop($fragments);
 		}else{
-			return "com";
-		}
-	}
+			// Change domain to use default
+			$this->domain .= ".".$this->defaultTLD;
 
-	// Check if there is a whois server for given TLD
-	protected function validateTld(){
-		return $this->validTlds[$this->tld] ?? false;
+			return $this->defaultTLD;
+		}
 	}
 }
