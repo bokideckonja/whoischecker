@@ -1,5 +1,7 @@
 <?php
 
+// Scraped from https://www.iana.org/domains/root/db
+
 return [
 	"aarp" => [
 		"server" => "whois.nic.aarp"
