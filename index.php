@@ -19,13 +19,25 @@
                 <form v-on:submit.prevent="onSubmit" action="rest.php" method="GET" autocomplete="off" class="content">
                     <div class="field has-addons">
                         <div class="control is-expanded has-icons-left">
-                            <input v-model="domain" class="input is-success is-large" type="text" name="domain" placeholder="e.g. example.com">
+                            <input 
+                                v-model="domain" 
+                                class="input is-success is-large" 
+                                type="text" 
+                                name="domain" 
+                                placeholder="e.g. example.com"
+                            >
                             <span class="icon is-small is-left">
                                 <i class="fas fa-globe"></i>
                             </span>
                         </div>
                         <div class="control">
-                            <button type="button" v-on:click="onSubmit" v-bind:class="{ 'is-loading': checking }" class="button is-success is-large" :disabled="checking">
+                            <button 
+                                type="button" 
+                                class="button is-success is-large" 
+                                v-on:click="onSubmit" 
+                                v-bind:class="{ 'is-loading': checking }" 
+                                :disabled="checking"
+                            >
                             Check
                             </button>
                         </div>

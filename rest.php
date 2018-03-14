@@ -14,12 +14,7 @@ $data['domain'] = $domain->domain;
 
 
 try{
-    // Check if domain is taken
-    if( !$domain->isAvailable()){
-        $data['available'] = false;
-        // Query whois data
-        $data['whois'] = $domain->whois();
-    }
+	$data = array_merge($data, $domain->whois());
 }catch(Exception $e){
     $data['success'] = false;
     $data['message'] = $e->getMessage();

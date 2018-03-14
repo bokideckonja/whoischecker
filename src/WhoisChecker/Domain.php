@@ -5,144 +5,185 @@ namespace WhoisChecker;
 use Exception;
 
 class Domain{
-	// Default TLD, used if not provided
-	private $defaultTLD = "com";
+    // Default TLD, used if not provided
+    private $defaultTLD = "com";
 
-	// List of valid TLDs
-	private $validTLDs;
+    // List of valid TLDs
+    private $validTLDs;
 
-	// Provided domain
-	public $domain;
+    // Provided domain
+    public $domain;
 
-	// Provided TLD
-	private $TLD;
+    // Provided TLD
+    private $TLD;
 
-	public function __construct($domain){
-		// Get valid tlds from extracted file
-		$this->validTLDs = require __DIR__.'/TLDs.php';
+    public function __construct($domain){
+        // Get valid tlds from extracted file
+        $this->validTLDs = require __DIR__.'/TLDs.php';
 
-		// Clean and set provided domain
-		$this->domain = $this->cleanDomain($domain);
+        // Clean and set provided domain
+        $this->domain = $this->cleanDomain($domain);
 
-		// Set tld based on domain name
-		$this->TLD = $this->extractTld();
-	}
+        // Set tld based on domain name
+        $this->TLD = $this->extractTld();
+    }
 
-	// Get whois data for provided domain
-	public function whois(){
-		// Check if domain is valid
-		$this->validateDomain();
+    // Get whois data for provided domain
+    public function whois(){
+        // Check if domain is valid
+        $this->validateDomain();
 
-		return $this->queryWhoisServer();
-	}
+        return $this->queryWhoisServer();
+    }
 
-	// Query the domain against correct whois server.
-	protected function queryWhoisServer(){
-		// Get whois server based on TLD
-		$whoisServer = $this->validTLDs[$this->TLD];
+    // Query the domain against correct whois server.
+    protected function queryWhoisServer(){
+        // Get whois server based on TLD
+        $whoisServer = $this->validTLDs[$this->TLD]['server'];
 
-		// If the server is not in provided list, throw error
-		if(!$whoisServer){
-			throw new Exception('There is no whois server for that TLD.');
-		}
+        // If the server is not in provided list, throw error
+        if(!$whoisServer){
+            throw new Exception('There is no whois server for that TLD.');
+        }
 
-		// Curl connect to whois server
-		$ch = curl_init();
-		curl_setopt($ch, CURLOPT_URL, $whoisServer.":43"); // Whois Server
-		curl_setopt($ch, CURLOPT_FOLLOWLOCATION, 0);
-		curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
-		curl_setopt($ch, CURLOPT_TIMEOUT, 60);
-		curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $this->domain."\r\n"); // Query
-		curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 0);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, 0);
-		$result = curl_exec ($ch);
+        $port = 43;
+        $timeout = 20;
+        // Open socket
+        $fp = @fsockopen($whoisServer, $port, $errno, $errstr, $timeout);
+        // If it fails to connect, throw error
+        if(!$fp){
+            throw new Exception("Error connecting to whois server.");
+        }
+        // Send domain
+        fputs($fp, '' . $this->domain . "\r\n");
+        // Get response
+        $response = "";
+        while(!feof($fp)){
+            $response .= fgets($fp);
+        }
+        // Close socket
+        fclose($fp);
 
-		// If curl encounters error, throw it
-		if( curl_error($ch) ){
-			throw new Exception('Error checking domain.');
-		}
-		curl_close($ch);
+        // Build return
+        $return['available'] = $this->isAvailable($response);
+        if(!$return['available']){
+            $return['whois'] = $this->cleanWhois($response);
+        }else{
+            $return['whois'] = false;
+        }
 
-		return $result;
-	}
+        return $return;
+    }
 
-	// Check if domain is available
-	public function isAvailable(){
-		// Check if domain is valid
-		$this->validateDomain();
+    // Check if domain is available
+    public function isAvailable($whois){
+        // Check if the $whois contains not_found string(true means it's available)
+        if( isset($this->validTLDs[$this->TLD]["not_found"]) ){
+            if ( mb_strpos($whois, $this->validTLDs[$this->TLD]["not_found"]) === false ) {
+                // Domain is not available
+                return false;
+            }
+        // If we don't have not_found pattern, try less secure code
+        }else{
+            // Check if DNS records exist
+            if ( gethostbyname($this->domain) !== $this->domain || checkdnsrr($this->domain.'.', 'NS') ) {
+                // Domain is not avalable
+                return false;
+            }
+        }
 
-		// Check if DNS records exist
-		if( checkdnsrr($this->domain.'.', 'ANY')){
-			return false;
-		}
+        return true;
+    }
 
-		return true;
-	}
+    // Clean whois response, and returns it
+    private function cleanWhois($whois){
+        $lines = explode("\n", $whois);
+        $buffer = "";
+        $end = false;
+        foreach($lines as $line){
+            if($end == true){
+                continue;
+            }
+            // Clean line
+            $line = trim($line);
+            // Clean empty strings and commented header info
+            if($line != '' && mb_substr($line, 0, 1) != '%' && mb_substr($line, 0, 1) != '#'){
+                $buffer .= $line."\n";
+            }
 
-	// Clean up entered domain
-	protected function cleanDomain($domain){
+            // Clear after this, it's removing legal info
+            if(mb_strpos($line, '>>> Last update') !== false){
+                $end = true;
+            }
+        }
 
-		// Trim string and convert to lowercase
-		$clean = mb_strtolower( trim( $domain ) );
+        return $buffer;
+    }
 
-		// Remove leading "http://"
-		if ( mb_substr($clean, 0, 7) == "http://" ) {
-		    $clean = mb_substr($clean, 7);
-		}
+    // Clean up entered domain and return it
+    protected function cleanDomain($domain){
 
-		// Remove leading "https://"
-		if ( mb_substr($clean, 0, 8) == "https://" ) {
-		    $clean = mb_substr($clean, 8);
-		}
+        // Trim string and convert to lowercase
+        $clean = mb_strtolower( trim( $domain ) );
 
-		// Remove leading "www."
-		if ( mb_substr($clean, 0, 4) == "www." ) {
-		    $clean = mb_substr($clean, 4);
-		}
+        // Remove leading "http://"
+        if ( mb_substr($clean, 0, 7) == "http://" ) {
+            $clean = mb_substr($clean, 7);
+        }
 
-		// Remove everithing after "/"
-		if ( mb_strpos( $clean, "/" ) !== false ) {
-			$clean = mb_substr( $clean, 0, mb_strpos( $clean, "/" ) );
-		}
+        // Remove leading "https://"
+        if ( mb_substr($clean, 0, 8) == "https://" ) {
+            $clean = mb_substr($clean, 8);
+        }
 
-		// Remove space characters
-		$clean = preg_replace('/\s+/', '', $clean);
+        // Remove leading "www."
+        if ( mb_substr($clean, 0, 4) == "www." ) {
+            $clean = mb_substr($clean, 4);
+        }
 
-		return $clean;
-	}
+        // Remove everithing after "/"
+        if ( mb_strpos( $clean, "/" ) !== false ) {
+            $clean = mb_substr( $clean, 0, mb_strpos( $clean, "/" ) );
+        }
 
-	// Check if domain is valid
-	protected function validateDomain(){
+        // Remove space characters
+        $clean = preg_replace('/\s+/', '', $clean);
 
-		// Check if domain is in correct format
-		if( preg_match( "/^(?!\-)(?:[a-zA-Z\d\-]{0,62}[a-zA-Z\d]\.){1,126}(?!\d+)[a-zA-Z\d]{1,63}$/", $this->domain ) == false ){
-			throw new Exception('Entered domain is not valid.');
-		}
+        return $clean;
+    }
 
-		// Check if domain is correct length
-		if( mb_strlen($this->domain) >= 253 ){
-			throw new Exception('Entered domain is not valid.');
-		}
+    // Check if domain is valid
+    protected function validateDomain(){
 
-		// Check if there is a whois server for given TLD
-		if( !isset($this->validTLDs[$this->TLD]) ){
-			throw new Exception('Unsupported TLD.');
-		}
+        // Check if domain is in correct format
+        if( preg_match( "/^(?!\-)(?:[a-zA-Z\d\-]{0,62}[a-zA-Z\d]\.){1,126}(?!\d+)[a-zA-Z\d]{1,63}$/", $this->domain ) == false ){
+            throw new Exception('Entered domain is not valid.');
+        }
 
-		return;
-	}
+        // Check if domain is correct length
+        if( mb_strlen($this->domain) >= 253 ){
+            throw new Exception('Entered domain is not valid.');
+        }
 
-	// Extract TLD from domain name, if there isn't any, use default
-	protected function extractTld(){
-		$fragments = explode( ".", $this->domain );
-		if(count($fragments) >= 2){
-			// Return last fragment as TLD
-			return array_pop($fragments);
-		}else{
-			// Change domain to use default
-			$this->domain .= ".".$this->defaultTLD;
+        // Check if there is a whois server for given TLD
+        if( !isset($this->validTLDs[$this->TLD]) ){
+            throw new Exception('Unsupported TLD.');
+        }
 
-			return $this->defaultTLD;
-		}
-	}
+        return;
+    }
+
+    // Extract TLD from domain name, if there isn't any, use default
+    protected function extractTld(){
+        $fragments = explode( ".", $this->domain );
+        if(count($fragments) >= 2){
+            // Return last fragment as TLD
+            return array_pop($fragments);
+        }else{
+            // Change domain to use default
+            $this->domain .= ".".$this->defaultTLD;
+
+            return $this->defaultTLD;
+        }
+    }
 }
